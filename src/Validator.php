@@ -63,6 +63,9 @@ class Validator implements ValidatorInterface {
     $this->custom_validators[] = $validator;
   }
 
+  /**
+   * @return true|false
+   */
   public function validate() {
 
     if (empty($this->rules)) {
@@ -105,7 +108,9 @@ class Validator implements ValidatorInterface {
    * $field = 'card_num'   => $params['card_num']
    * $field = 'cards.id'   => $params['cards']['id']
    * $field = 'cards.#.id' => $params['cards'][#]['id']
-   * @return true | array( WP_Error, WP_Error, ...) | WP_Error
+   * $rule = 'presence:true'
+   * $rule = 'numeric:only_integer,greater_than(10)'
+   * @return true | [ [$filed => ValidationError], [$filed => ValidationError], ... ]
    */
   protected function validate_rule($field, $rule) {
 
@@ -113,7 +118,7 @@ class Validator implements ValidatorInterface {
 
     $rule_method = 'rule_' . $rule_name;
     if ( ! method_exists( $this, $rule_method ) ) {
-      throw new Exception('Could not found validation rule method: ' . $rule);
+      throw new Exception("Could not found validation rule method: {$rule}");
     }
 
     $errors = [];
@@ -123,14 +128,14 @@ class Validator implements ValidatorInterface {
       foreach ($this->params as $k => $v) {
         if (preg_match("#{$field_regex}#", $k)) {
           $ret = $this->{$rule_method}($k, $v, $rule_options);
-          if ($ret instanceof Paywp_Error) {
+          if ($ret instanceof ValidationError) {
             $errors[$k] = $ret;
           }
         }
       }
     } else {
       $ret = $this->{$rule_method}($field, $this->get_value($field), $rule_options);
-      if ($ret instanceof Paywp_Error) {
+      if ($ret instanceof ValidationError) {
         $errors[$field] = $ret;
       }
     }
@@ -259,29 +264,34 @@ class Validator implements ValidatorInterface {
 ///////////////////////// Rules
 
   /**
-   * @return true|Paywp_Error
+   * @throws Exception
+   * @return true|ValidationError
    */
   protected function rule_presence( $name, $value, $rule_options ) {
+    return $this->_rule_presence($name, $value, true);
+  }
 
-    $opt = current(array_keys($rule_options));
+  protected function rule_absence( $name, $value, $rule_options ) {
+    return $this->_rule_presence($name, $value, false);
+  }
 
-    if ($opt !== 'true' && $opt !== 'false') {
+  protected function _rule_presence( $name, $value, $rule_options) {
+
+    if ( ! is_bool($rule_options ) ) {
       throw new Exception("{$name}: invalid rule options detected.");
     }
 
-    $opt = (bool)$opt;
-
     if ( $opt === true && empty($value) ) {
-      return new Paywp_Error(__FUNCTION__, "{$name} should be presence.");
+      return new ValidationError("{$name} should be presence.");
     } elseif ( $opt === false && ! empty($value) ) {
-      return new Paywp_Error(__FUNCTION__, "{$name} should not be presence.");
+      return new ValidationError("{$name} should be absence.");
     }
     return true;
   }
 
   protected function rule_not_null( $name, $value, $rule_options ) {
     if ( is_null($value) ) {
-      return new Paywp_Error(__FUNCTION__, "{$name} should not be null.");
+      return new ValidationError("{$name} should not be null.");
     }
     return true;
   }
@@ -293,7 +303,7 @@ class Validator implements ValidatorInterface {
 
   protected function rule_email( $name, $value, $rule_options ) {
     if ( ! filter_var($value, FILTER_VALIDATE_EMAIL) ){
-      return new Paywp_Error(__FUNCTION__, "{$name} should be valid email address");
+      return new ValidationError("{$name} should be valid email address");
     }
     return true;
   }
